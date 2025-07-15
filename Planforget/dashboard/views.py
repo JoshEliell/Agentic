@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from django.http import HttpResponse
-from .forms import AnswerForm, FileInputForm
+from .forms import FileInputForm
 # utils.py
 import tempfile
 from pptx import Presentation
@@ -19,9 +19,9 @@ def home(request):
     if request.method == 'POST':
         form = FileInputForm(request.POST, request.FILES)
         if form.is_valid():
-            tipo = form.cleaned_data['tipo']
+            #tipo = form.cleaned_data['tipo']
             archivo = request.FILES['archivo']
-            resultados = analizar_archivo(tipo, archivo)
+            resultados = analizar_archivo(archivo)
     else:
         form = FileInputForm()
 
@@ -31,33 +31,19 @@ def home(request):
 
     return render(request, 'dashboard/dashboard.html',context)
 
-def analizar_archivo(tipo, archivo):
+def analizar_archivo(archivo):
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         for chunk in archivo.chunks():
             tmp.write(chunk)
         ruta = tmp.name
 
-    texto = extraer_texto(tipo, ruta)
+    texto = extraer_texto(ruta)
     return extract_insights_with_rag(texto)
 
-def extraer_texto(tipo, ruta):
-    if tipo == 'pdf':
-        doc = fitz.open(ruta)
-        return "\n".join([page.get_text() for page in doc])
+def extraer_texto(ruta):
     
-    elif tipo == 'powerpoint':
-        prs = Presentation(ruta)
-        texto = ''
-        for slide in prs.slides:
-            for shape in slide.shapes:
-                if hasattr(shape, "text"):
-                    texto += shape.text + '\n'
-        return texto
-    
-    elif tipo == 'google_docs' or tipo == 'notion':
-        return "Contenido simulado. Debes integrar API de Google Docs o Notion."
-
-    return "No se pudo leer el archivo."
+    doc = fitz.open(ruta)
+    return "\n".join([page.get_text() for page in doc])
 
 # Define the RAG function
 def extract_insights_with_rag(text):

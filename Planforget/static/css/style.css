@@ -1,4 +1,4 @@
-body {background-color: #9a9b9d;}
+/* body {background-color: #9a9b9d;}
 
 .my-card:hover{
     transform: scale(1.1);
@@ -136,8 +136,8 @@ body {background-color: #9a9b9d;}
 
 /* ---------------------------------
 # BOOTSTRAP MODAL POPUP DARK THEME
-------------------------------------*/
+------------------------------------
 .modal-header, .modal-body, .modal-footer {
     background-color: rgba(0,0,0,0.8);
     color: #fff;
-}
+} */
