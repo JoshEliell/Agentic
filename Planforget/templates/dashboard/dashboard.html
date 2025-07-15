@@ -37,8 +37,13 @@
 
             {% if resultados %}
                 <hr>
-                <h2>Resultados del análisis</h2>
+                <h2>Resultados del RAG</h2>
                 <pre style="white-space: pre-wrap;">{{ resultados }}</pre>
+            {% endif %}
+            {% if preguntas %}
+                <hr>
+                <h2>Resultados del Agentic AI</h2>
+                <pre style="white-space: pre-wrap;">{{ preguntas }}</pre>
             {% endif %}
         </div>
     </div>
