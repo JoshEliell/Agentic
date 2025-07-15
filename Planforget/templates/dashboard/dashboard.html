@@ -142,13 +142,9 @@
         <div class="card shadow-lg border-0 rounded-4 p-4">
           <h2 class="text-center mb-4">Upload your documents</h2>
           <form method="post" enctype="multipart/form-data">
-                {% csrf_token %}
-                    {{ form.as_p }}
-            <!-- <div class="mb-3 text-start">
-              <input class="form-control" type="file" id="archivo" name="archivo" multiple>
-                    
-            </div> -->
-            <button type="submit" class="btn btn-primary px-4 py-2 mx-auto d-block">Create brief</button>
+              {% csrf_token %}
+              {{ form.as_p }}
+              <button type="submit" class="btn btn-primary px-4 py-2 mx-auto d-block">Create brief</button>
           </form>
         </div>
       </div>

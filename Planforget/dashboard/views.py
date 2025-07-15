@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from django.http import HttpResponse
-from .forms import AnswerForm, FileInputForm
+from .forms import FileFieldForm
 import json
 # utils.py
 import tempfile
@@ -25,23 +25,28 @@ import re
 
 # Create your views here.
 def home(request):
-    resultados = None  # Inicializa variable
+    resultados = None
     preguntas = None
     
     if request.method == 'POST':
-        form = FileInputForm(request.POST, request.FILES)
+        form = FileFieldForm(request.POST, request.FILES)
         if form.is_valid():
-            tipo = form.cleaned_data['tipo']
-            archivo = request.FILES['archivo']
-            resultados = analizar_archivo(tipo, archivo)    
-            json_string_data = resultados.get("result", "{}")
+            archivos = request.FILES.getlist('Files')
+            texto_total = ""
+
+            for archivo in archivos:
+                texto_total += extraer_texto(archivo) + "\n"
+
+            resultados_raw = extract_insights_with_rag(texto_total)
+            json_string_data = resultados_raw.get("result", "{}")
+
             try:
                 resultados = json.loads(json_string_data)
             except json.JSONDecodeError as e:
-                # Maneja el caso si el LLM no devuelve JSON válido
                 print(f"Error al decodificar JSON del LLM: {e}")
-                print(f"Cadena JSON recibida: {json_string_data[:500]}...")
                 resultados = {}
+
+            # Asignación segura
             campaign_objectives = resultados.get("Campaign objectives", [])
             product_specifications = resultados.get("Product or service specifications", [])
             audience_data = resultados.get("Audience data or segments", [])
@@ -53,29 +58,23 @@ def home(request):
             content_tags = resultados.get("Content taxonomy or tags", [])
             delivery_tools = resultados.get("Expected delivery tools/platforms", [])
 
-            campaign_objectives_txt = "\n".join(campaign_objectives)
-            product_specifications_txt = "\n".join(product_specifications)
-            audience_data_txt = "\n".join(audience_data)
-            content_type_txt = "\n".join(content_type)
-            tone_style_txt = "\n".join(tone_style)
-            historical_context_txt = "\n".join(historical_context)
-            agent_1 = agentic_objetive(campaign_objectives_txt)
-            agent_2 = agentic_product_analysis(product_specifications_txt, audience_data_txt, content_type_txt, tone_style_txt)
-            agent_3 = agentic_background(historical_context_txt)
-            agent_4 = agentic_audience_profiling(audience_data_txt, agent_2)
-            agent_5 = agentic_insights(product_specifications_txt, campaign_objectives_txt, agent_4, agent_2)
-            # Final brief using all the relevant data
-            final_brief = agentic_brief_generator(product_specifications_txt,agent_4,agent_1,agent_5,agent_3)
+            # Lógica de agentes
+            agent_1 = agentic_objetive(campaign_objectives)
+            agent_2 = agentic_product_analysis(product_specifications, audience_data, content_type, tone_style)
+            agent_3 = agentic_background(historical_context)
+            agent_4 = agentic_audience_profiling(audience_data, agent_2)
+            agent_5 = agentic_insights(product_specifications, campaign_objectives, agent_4, agent_2)
+            final_brief = agentic_brief_generator(product_specifications, agent_4, agent_1, agent_5, agent_3)
             preguntas = final_brief
-            #preguntas = agent_1
+
+            # Generar el archivo Word
             docx_buffer = generate_brief_docx_in_memory(preguntas)
-            # Crea el HttpResponse para la descarga
             response = HttpResponse(docx_buffer.getvalue(), content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
             response['Content-Disposition'] = f'attachment; filename="brief_generate_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx"'
-            
-            return response # ¡Devuelve el HttpResponse con el archivo!
+            return response
+
     else:
-        form = FileInputForm()
+        form = FileFieldForm()
 
     context= {'form': form,
               'resultados': resultados,
@@ -94,12 +93,21 @@ def analizar_archivo(tipo, archivo):
     result_str = extract_insights_with_rag(texto)
     return result_str
 
-def extraer_texto(tipo, ruta):
-    if tipo == 'pdf':
+def extraer_texto(archivo):
+    nombre = archivo.name.lower()
+    
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        for chunk in archivo.chunks():
+            tmp.write(chunk)
+        ruta = tmp.name
+
+    if nombre.endswith('.pdf'):
+        import fitz
         doc = fitz.open(ruta)
         return "\n".join([page.get_text() for page in doc])
     
-    elif tipo == 'powerpoint':
+    elif nombre.endswith('.pptx'):
+        from pptx import Presentation
         prs = Presentation(ruta)
         texto = ''
         for slide in prs.slides:
@@ -107,16 +115,13 @@ def extraer_texto(tipo, ruta):
                 if hasattr(shape, "text"):
                     texto += shape.text + '\n'
         return texto
-    
-    elif tipo == 'google_docs' or tipo == 'notion':
-        return "Contenido simulado. Debes integrar API de Google Docs o Notion."
 
     return "No se pudo leer el archivo."
 
 # Define the RAG function
 def extract_insights_with_rag(text):
     # 1. Chunk the document
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
     docs = [Document(page_content=chunk) for chunk in splitter.split_text(text)]
 
     # 2. Embeddings
@@ -126,7 +131,7 @@ def extract_insights_with_rag(text):
     db = FAISS.from_documents(docs, embeddings)
 
     # 4. Define retrievera
-    retriever = db.as_retriever(search_type="similarity", search_kwargs={"k":5})
+    retriever = db.as_retriever(search_type="similarity", search_kwargs={"k":3})
 
     # 5. Use Ollama LLM
     llm = OllamaLLM(model="mistral", format="json")  # o "llama3", si tienes otro modelo cargado
