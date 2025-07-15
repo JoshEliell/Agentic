@@ -7,14 +7,13 @@ import tempfile
 from pptx import Presentation
 import fitz  # PyMuPDF
 import subprocess
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain_community.llms import Ollama
+from langchain_ollama import OllamaLLM
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 from langchain.chains import RetrievalQA
 #Agentics
-from langchain_ollama import OllamaLLM
 from langchain.prompts import PromptTemplate
 #Docs
 from docx import Document as DocxDocument
@@ -22,18 +21,27 @@ from docx.shared import Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from datetime import datetime
 from io import BytesIO # ¡Importa BytesIO!
+import re   
+
 # Create your views here.
 def home(request):
     resultados = None  # Inicializa variable
     preguntas = None
-    structured_objective = None
     
     if request.method == 'POST':
         form = FileInputForm(request.POST, request.FILES)
         if form.is_valid():
             tipo = form.cleaned_data['tipo']
             archivo = request.FILES['archivo']
-            resultados = analizar_archivo(tipo, archivo)            
+            resultados = analizar_archivo(tipo, archivo)    
+            json_string_data = resultados.get("result", "{}")
+            try:
+                resultados = json.loads(json_string_data)
+            except json.JSONDecodeError as e:
+                # Maneja el caso si el LLM no devuelve JSON válido
+                print(f"Error al decodificar JSON del LLM: {e}")
+                print(f"Cadena JSON recibida: {json_string_data[:500]}...")
+                resultados = {}
             campaign_objectives = resultados.get("Campaign objectives", [])
             product_specifications = resultados.get("Product or service specifications", [])
             audience_data = resultados.get("Audience data or segments", [])
@@ -72,7 +80,6 @@ def home(request):
     context= {'form': form,
               'resultados': resultados,
               'preguntas': preguntas,
-              'structured_objective':structured_objective,
         }
 
     return render(request, 'dashboard/dashboard.html',context)
@@ -85,11 +92,7 @@ def analizar_archivo(tipo, archivo):
 
     texto = extraer_texto(tipo, ruta)
     result_str = extract_insights_with_rag(texto)
-    try:
-        return json.loads(result_str)
-    except json.JSONDecodeError as e:
-        print("❌ Error al decodificar JSON:", e)
-        return {}
+    return result_str
 
 def extraer_texto(tipo, ruta):
     if tipo == 'pdf':
@@ -126,11 +129,13 @@ def extract_insights_with_rag(text):
     retriever = db.as_retriever(search_type="similarity", search_kwargs={"k":5})
 
     # 5. Use Ollama LLM
-    llm = Ollama(model="mistral")  # o "llama3", si tienes otro modelo cargado
+    llm = OllamaLLM(model="mistral", format="json")  # o "llama3", si tienes otro modelo cargado
 
     # 6. Define the prompt/question
     query = """
-    Extract the following key inputs as JSON:
+    Extract the following key inputs as a JSON object.
+    Respond ONLY with the JSON object. Do NOT include any additional text, explanations, or markdown fences (```json```).
+    Your entire response must be a single, valid JSON object.
     1. Campaign objectives
     2. Product or service specifications
     3. Audience data or segments
@@ -145,7 +150,8 @@ def extract_insights_with_rag(text):
 
     # 7. Retrieval-based QA chain
     rag_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=False)
-    result = rag_chain.run(query)
+    result = rag_chain.invoke(query)
+
 
     return result
 
@@ -182,7 +188,7 @@ def agentic_product_analysis(product_specifications: str,audience_data: str,cont
     3. What are the challenges?
     4. Product/Service Description
     5. Solutions/Offering
-    6. Why this platform or solution (XYZ)?
+    6. Why this platform or solution?
     7. Why does the enterprise need it?
     8. 3–5 key features
     9. Main user benefit
