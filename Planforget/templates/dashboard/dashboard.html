@@ -1,0 +1,49 @@
+{% extends 'partials/base.html'%}
+{% load static %}
+
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    {% block title %}Home PlanForget{% endblock %}
+    {% block content %}
+</head>
+<hr><hr>
+
+<body>
+<div class="container">
+    <div class="row mt-4">
+        <div class="col-md-2">
+            <div class="card">
+                <div class="card-header bg-light text-dark">
+                    <strong>Proyect</strong>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <img src="" alt="IMAGE" width="160" height="170">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-10">
+            <h1>Sube el archivo de campaña</h1>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    {{ form.as_p }}
+                    <button type="submit">Analizar</button>
+                </form>
+            </div>
+
+            {% if resultados %}
+                <hr>
+                <h2>Resultados del análisis</h2>
+                <pre style="white-space: pre-wrap;">{{ resultados }}</pre>
+            {% endif %}
+        </div>
+    </div>
+</div>
+</body>
+{% endblock %}
+
+</html>
