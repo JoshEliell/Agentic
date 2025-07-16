@@ -22,6 +22,9 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from datetime import datetime
 from io import BytesIO # ¡Importa BytesIO!
 import re   
+#Youtube videos
+from youtube_transcript_api import YouTubeTranscriptApi
+from urllib.parse import urlparse, parse_qs
 
 # Create your views here.
 def home(request):
@@ -32,11 +35,21 @@ def home(request):
         form = FileFieldForm(request.POST, request.FILES)
         if form.is_valid():
             archivos = request.FILES.getlist('Files')
+            youtube_link = request.POST.get('youtube_link', '').strip()
             texto_total = ""
-
+            
             for archivo in archivos:
                 texto_total += extraer_texto(archivo) + "\n"
 
+            # Extract text from YouTube video
+            if youtube_link:
+                youtube_text = extract_youtube_text(youtube_link)
+                total_text += "\n" + youtube_text
+
+            if not texto_total.strip():
+                print("No content to process")
+                return render(request, 'dashboard/dashboard.html', {'form': form})
+            
             resultados_raw = extract_insights_with_rag(texto_total)
             json_string_data = resultados_raw.get("result", "{}")
 
@@ -47,30 +60,35 @@ def home(request):
                 resultados = {}
 
             # Asignación segura
-            campaign_objectives = resultados.get("Campaign objectives", [])
-            product_specifications = resultados.get("Product or service specifications", [])
-            audience_data = resultados.get("Audience data or segments", [])
-            content_type = resultados.get("Type of content to generate", [])
-            tone_style = resultados.get("Preferred tone and style", [])
-            historical_context = resultados.get("Previous information / historical context", [])
-            business_insights = resultados.get("Business insights or findings", [])
-            stakeholder_comments = resultados.get("Internal stakeholder comments", [])
-            content_tags = resultados.get("Content taxonomy or tags", [])
-            delivery_tools = resultados.get("Expected delivery tools/platforms", [])
+            campaign_objectives = resultados.get("campaign_objectives", [])
+            product_specifications = resultados.get("product_specifications", [])
+            audience_data = resultados.get("audience_segments", [])
+            content_type = resultados.get("content_type", [])
+            tone_style = resultados.get("tone_and_style", [])
+            historical_context = resultados.get("historical_context", [])
+            business_insights = resultados.get("business_insights", [])
+            stakeholder_comments = resultados.get("stakeholder_comments", [])
+            content_tags = resultados.get("content_tags", [])
+            delivery_tools = resultados.get("delivery_platforms", [])
 
             # Lógica de agentes
             agent_1 = agentic_objetive(campaign_objectives)
+            print('20%')
             agent_2 = agentic_product_analysis(product_specifications, audience_data, content_type, tone_style)
             agent_3 = agentic_background(historical_context)
+            print('60%')
             agent_4 = agentic_audience_profiling(audience_data, agent_2)
             agent_5 = agentic_insights(product_specifications, campaign_objectives, agent_4, agent_2)
+            print('80%')
             final_brief = agentic_brief_generator(product_specifications, agent_4, agent_1, agent_5, agent_3)
+            print('90%')
             preguntas = final_brief
 
             # Generar el archivo Word
             docx_buffer = generate_brief_docx_in_memory(preguntas)
             response = HttpResponse(docx_buffer.getvalue(), content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
             response['Content-Disposition'] = f'attachment; filename="brief_generate_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx"'
+            response.set_cookie('brief_ready', 'true', max_age=60, path='/')
             return response
 
     else:
@@ -138,19 +156,35 @@ def extract_insights_with_rag(text):
 
     # 6. Define the prompt/question
     query = """
-    Extract the following key inputs as a JSON object.
-    Respond ONLY with the JSON object. Do NOT include any additional text, explanations, or markdown fences (```json```).
-    Your entire response must be a single, valid JSON object.
-    1. Campaign objectives
-    2. Product or service specifications
-    3. Audience data or segments
-    4. Type of content to generate
-    5. Preferred tone and style
-    6. Previous information / historical context
-    7. Business insights or findings
-    8. Internal stakeholder comments
-    9. Content taxonomy or tags
-    10. Expected delivery tools/platforms
+        You are a strategy analyst assistant. Given the text content of a marketing or business document, extract and return a JSON object containing the following 10 fields.
+        Respond ONLY with the JSON object. Do NOT include any additional text, explanations, or markdown fences (json).
+        Your entire response must be a single, valid JSON object.
+        Fields to extract:
+
+        1. Campaign objectives: What are the business or marketing goals mentioned or implied?
+        2. Product specifications: What is being offered? Include relevant product/service details.
+        3. Audience segments: Who is the target audience (age, behavior, interests, demographics)?
+        4. Content type: What kind of content is being discussed or implied (e.g. blog posts, video, social)?
+        5. Tone and style: What tone or voice is preferred (e.g. casual, professional)?
+        6. Historical context: Any past efforts, campaigns, or relevant historical background.
+        7. Business insights: Any data, findings, or strategic insight present in the document.
+        8. Stakeholder_comments: Any input or quotes from internal team members, leadership, etc.
+        9. Content tags: Keywords, taxonomy, or themes related to the content.
+        10. Delivery platforms: Which channels or platforms are mentioned (e.g. social media, email, website)?
+
+        Respond with the answer in the following format (remember JSON):
+    {
+        "campaign_objectives": "",
+        "product_specifications": "",
+        "audience_segments": "",
+        "content_type": "",
+        "tone_and_style": "",
+        "historical_context": "",
+        "business_insights": "",
+        "stakeholder_comments": "",
+        "content_tags": "",
+        "delivery_platforms": ""
+    }
     """
 
     # 7. Retrieval-based QA chain
@@ -166,7 +200,7 @@ def agentic_objetive(objective: str, model_name: str = "mistral") -> str: #1
     template = """
     You are an AI agent that receives a business campaign objective and converts it into structured key variables.
 
-    Answer the following in a structured way:
+    Answer the following in a structured way (DO NOT INFERENCE ANYTHING):
     - Business Objective
     - What are we trying to achieve?
     - Why is this campaign important to the business?
@@ -186,14 +220,14 @@ def agentic_product_analysis(product_specifications: str,audience_data: str,cont
     llm = OllamaLLM(model=model_name)
 
     template = """
-    You are a marketing expert. Analyze the product below to help answer the following:
+    You are a marketing expert. Analyze the product below to help answer the following (DO NOT INFERENCE ANYTHING):
 
     1. Marketing Objective
     2. The Problem we are trying to solve
     3. What are the challenges?
     4. Product/Service Description
     5. Solutions/Offering
-    6. Why this platform or solution?
+    6. Why this platform or solution (XYZ)?
     7. Why does the enterprise need it?
     8. 3–5 key features
     9. Main user benefit
@@ -223,13 +257,13 @@ def agentic_background(historical_context: str, model_name: str = "mistral") -> 
     template = """
     You are a meticulous marketing analyst specializing in campaign retrospectives.
     Your task is to carefully review the provided historical campaign data.
-    Based on this data, extract and summarize the most critical takeaways.
+    Based on this data, extract and summarize the most critical takeaways (DO NOT INFERENCE ANYTHING).
 
     Focus on identifying:
-    1.  **Key Successes:** What specific aspects or elements of past campaigns worked exceptionally well?
-    2.  **Key Failures or Challenges:** What didn't work as expected, what were the main obstacles, or what valuable lessons were learned from setbacks?
-    3.  **Notable Creative Themes/Approaches:** Were there any distinct creative styles, messaging tones, or visual approaches that were particularly effective or ineffective?
-    4.  **Overall Strategic Implications:** How should these past learnings inform future marketing decisions, strategy adjustments, or avoid repeating mistakes?
+    1.  *Key Successes:* What specific aspects or elements of past campaigns worked exceptionally well?
+    2.  *Key Failures or Challenges:* What didn't work as expected, what were the main obstacles, or what valuable lessons were learned from setbacks?
+    3.  *Notable Creative Themes/Approaches:* Were there any distinct creative styles, messaging tones, or visual approaches that were particularly effective or ineffective?
+    4.  *Overall Strategic Implications:* How should these past learnings inform future marketing decisions, strategy adjustments, or avoid repeating mistakes?
 
     ---
 
@@ -248,7 +282,7 @@ def agentic_audience_profiling(audience_data: str,agent_2: str, model_name: str 
     llm = OllamaLLM(model=model_name)
 
     template = """
-    You are a digital strategist. Use the audience data to answer:
+    You are a digital strategist. Use the audience data to answer (DO NOT INFERENCE ANYTHING):
 
     1. Target Audience
     2. Ideal Digital Mediums/Channels for this audience
@@ -274,7 +308,7 @@ def agentic_insights(product_specifications: str,campaign_objectives: str,agent_
     template = """
     You are a strategic planner.
 
-    Analyze the data and provide:
+    Analyze the data and provide (DO NOT INFERENCE ANYTHING):
 
     1. Strategic Insight (linking product + audience + objective)
     2. Creative idea based on that insight
@@ -308,7 +342,7 @@ def agentic_brief_generator(product_specifications: str,agent_4: str,agent_1: st
     llm = OllamaLLM(model=model_name)
 
     template = """
-    You are a creative strategist at a marketing agency. Build a structured campaign brief with the following sections:
+    You are a creative strategist at a marketing agency. Build a structured campaign brief with the following sections. Before adding information to the sections, add a line break:
 
     1. Brief Title
     2. Business Objective
@@ -439,3 +473,24 @@ def generate_brief_docx_in_memory(brief_content: str) -> BytesIO:
     document.save(buffer)
     buffer.seek(0) # Rewind the buffer to the beginning
     return buffer
+
+def extract_youtube_text(url):
+    try:
+        video_id = None
+        parsed_url = urlparse(url)
+        if parsed_url.hostname == 'youtu.be':
+            video_id = parsed_url.path[1:]
+        elif parsed_url.hostname in ['www.youtube.com', 'youtube.com']:
+            query = parse_qs(parsed_url.query)
+            video_id = query.get('v', [None])[0]
+
+        if not video_id:
+            return ""
+
+        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        text = " ".join([entry['text'] for entry in transcript])
+        return text
+    except Exception as e:
+        print(f"Error extracting YouTube transcript: {e}")
+        return ""
+    

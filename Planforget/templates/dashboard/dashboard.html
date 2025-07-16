@@ -142,18 +142,56 @@
         <div class="card shadow-lg border-0 rounded-4 p-4">
           <h2 class="text-center mb-4">Upload your documents</h2>
           <form method="post" enctype="multipart/form-data">
-              {% csrf_token %}
-              {{ form.as_p }}
-              <button type="submit" class="btn btn-primary px-4 py-2 mx-auto d-block">Create brief</button>
+                {% csrf_token %}
+                    {{ form.as_p }}
+            <button type="submit" class="btn btn-primary px-4 py-2 mx-auto d-block">Create brief</button>
           </form>
+              <div class="mb-3 d-flex align-items-center">
+        </div>
+        <div class="card shadow-lg border-0 rounded-4 p-4 mt-4">
+          <h2 class="text-center mb-3">Paste your Link</h2>
+            {% csrf_token %}
+            <div class="input-group">
+              <span class="input-group-text bg-gray border-0">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/b/b8/YouTube_Logo_2017.svg" alt="YouTube" style="height: 24px;">
+              </span>
+              <input type="url" class="form-control" name="youtube_link" placeholder="https://youtube.com/watch?v=..." required>
+            </div>
+            <button type="submit" class="btn btn-primary mt-3 px-4 py-2 d-block mx-auto">Analyze link</button>
         </div>
       </div>
 
     </div>
   </div>
-  
-</body>{% endblock %} 
+  <!-- Loading Overlay -->
+<div id="loadingOverlay" style="
+  display: none;
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background-color: rgba(0, 0, 0, 0.6);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+">
+  <div class="spinner-border text-light" role="status" style="width: 4rem; height: 4rem;">
+    <span class="visually-hidden">Loading...</span>
+  </div>
+</div>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const form = document.querySelector('form');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+
+    form.addEventListener('submit', function () {
+      loadingOverlay.style.display = 'flex'; // Muestra el overlay
+    });
+  });
+  const form = document.querySelector('form');
+  form.addEventListener('submit', function (e) {
+    const submitButton = form.querySelector('button[type="submit"]');
+    submitButton.disabled = true; // evita múltiples envíos
+  });
+</script>
+</body>{% endblock %} 
 </html>
-
-
-
